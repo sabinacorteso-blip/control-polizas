@@ -27,14 +27,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# -------------------------------------------------------------
-# CONFIGURACIÓN DE GOOGLE SHEETS PARA TRABAJO COLABORATIVO
-# -------------------------------------------------------------
-# Para que sea colaborativo, conectamos con Google Sheets mediante Streamlit secrets o un archivo CSV compartido.
-# Instrucción rápida para Streamlit Cloud: Puedes usar st.connection("gsheets") o cargar un CSV de respaldo en tiempo real.
 @st.cache_data(ttl=10)
 def cargar_datos_nube():
-    # Intentamos conectar a Google Sheets si está configurado, o usamos un respaldo CSV local persistente en el servidor
     try:
         conn = st.connection("gsheets", type="gsheets")
         df = conn.read(ttl=5)
@@ -43,7 +37,6 @@ def cargar_datos_nube():
     except:
         pass
     
-    # Respaldo en archivo local por si no se han configurado las credenciales de Google Sheets todavía
     try:
         return pd.read_csv("cartera_pantera.csv")
     except:
@@ -69,7 +62,6 @@ if "clientes" not in st.session_state:
 df = st.session_state.clientes
 hoy = datetime.now().date()
 
-# Asegurar conversiones de fecha seguras
 df['Vencimiento_dt'] = pd.to_datetime(df.get('Vencimiento'), errors='coerce').dt.date
 df['Pago_Limite_dt'] = pd.to_datetime(df.get('Pago_Limite'), errors='coerce').dt.date
 
@@ -159,7 +151,7 @@ elif menu == "Búsqueda de Pólizas":
             st.warning("No se encontraron registros con ese criterio.")
 
 # -------------------------------------------------------------
-# 3. REGISTRO Y RENOVACIÓN (CON CORRECCIONES SOLICITADAS)
+# 3. REGISTRO Y RENOVACIÓN
 # -------------------------------------------------------------
 elif menu == "Registro y Renovación":
     st.header("📝 Alta y Renovación de Póliza")
@@ -168,25 +160,29 @@ elif menu == "Registro y Renovación":
         col1, col2 = st.columns(2)
         with col1:
             nombre = st.text_input("Nombre Completo del Cliente").upper()
-            rfc = st.text_input("RFC (Ej. MEMR851015HDF)").upper()
+            rfc = st.text_input("RFC o Texto (Ej. MEMR851015HDF o 720806)").upper()
             
-            # --- CÁLCULO AUTOMÁTICO DE FECHA DE NACIMIENTO DESDE EL RFC ---
+            # --- EXTRACCIÓN INTELIGENTE DE FECHA DE NACIMIENTO ---
             fecha_nac_calc = datetime.today().date()
-            if len(rfc) >= 10:
+            limpio = "".join([c for c in rfc if c.isdigit()])
+            if len(rfc) >= 10:  # RFC estándar de 13 caracteres (posiciones 4 a 9 son AAMMDD)
                 try:
-                    a_str = rfc[4:6]
-                    m_str = rfc[6:8]
-                    d_str = rfc[8:10]
-                    anio_num = int(a_str)
-                    siglo = 1900 if anio_num > 30 else 2000
-                    fecha_nac_calc = datetime(siglo + anio_num, int(m_str), int(d_str)).date()
+                    a_str, m_str, d_str = rfc[4:6], rfc[6:8], rfc[8:10]
+                    siglo = 1900 if int(a_str) > 30 else 2000
+                    fecha_nac_calc = datetime(siglo + int(a_str), int(m_str), int(d_str)).date()
+                except:
+                    pass
+            elif len(limpio) >= 6:  # Si ingresa directo 6 dígitos (AAMMDD)
+                try:
+                    a_str, m_str, d_str = limpio[:2], limpio[2:4], limpio[4:6]
+                    siglo = 1900 if int(a_str) > 30 else 2000
+                    fecha_nac_calc = datetime(siglo + int(a_str), int(m_str), int(d_str)).date()
                 except:
                     pass
 
-            nacimiento = st.date_input("Fecha de Nacimiento (Autocalculada por RFC)", value=fecha_nac_calc)
+            nacimiento = st.date_input("Fecha de Nacimiento (Autocalculada)", value=fecha_nac_calc)
             telefono = st.text_input("Teléfono (10 dígitos)")
             
-            # --- CORREO CON DOMINIO INTEGRADO ---
             st.markdown("**Correo Electrónico**")
             c_user = st.text_input("Escribe el usuario del correo", label_visibility="collapsed", placeholder="usuario")
             c_dom = st.selectbox("Dominio", ["@gmail.com", "@hotmail.com", "@yahoo.com", "Personalizado"])
@@ -216,7 +212,7 @@ elif menu == "Registro y Renovación":
             
             emision = st.date_input("Fecha de Emisión / Inicio")
             
-            # --- VIGENCIAS EXACTAS SOLICITADAS ---
+            # --- VIGENCIAS EXACTAS ---
             vigencia_op = st.selectbox("Vigencia", ["6 meses", "1 año", "2 años"])
             
             if vigencia_op == "6 meses":
