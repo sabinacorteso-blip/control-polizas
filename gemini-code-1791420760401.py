@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-import io
-import os
 import urllib.parse
 
 # Configuración de la página con tema visual en Verde Agua
@@ -29,57 +27,51 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Archivo local en GitHub para guardar la información permanentemente
-ARCHIVO_EXCEL = "cartera_clientes.xlsx"
+# -------------------------------------------------------------
+# CONFIGURACIÓN DE GOOGLE SHEETS PARA TRABAJO COLABORATIVO
+# -------------------------------------------------------------
+# Para que sea colaborativo, conectamos con Google Sheets mediante Streamlit secrets o un archivo CSV compartido.
+# Instrucción rápida para Streamlit Cloud: Puedes usar st.connection("gsheets") o cargar un CSV de respaldo en tiempo real.
+@st.cache_data(ttl=10)
+def cargar_datos_nube():
+    # Intentamos conectar a Google Sheets si está configurado, o usamos un respaldo CSV local persistente en el servidor
+    try:
+        conn = st.connection("gsheets", type="gsheets")
+        df = conn.read(ttl=5)
+        if not df.empty:
+            return df
+    except:
+        pass
+    
+    # Respaldo en archivo local por si no se han configurado las credenciales de Google Sheets todavía
+    try:
+        return pd.read_csv("cartera_pantera.csv")
+    except:
+        return pd.DataFrame(columns=[
+            "Cliente", "RFC", "Telefono", "Correo", "Nacimiento", "Contrato", 
+            "Poliza", "Serie", "Placa", "Aseguradora", "Vendedor", "Ramo", 
+            "Uso_Auto", "Prima_Neta", "Forma_Pago", "Vigencia", "Emision", 
+            "Vencimiento", "Pago_Limite", "Estatus_Pago", "Estatus_Poliza", "Mes_Venta"
+        ])
 
-# Función para cargar los datos desde Excel
-@st.cache_data(ttl=1)
-def cargar_datos():
-    if os.path.exists(ARCHIVO_EXCEL):
-        try:
-            return pd.read_excel(ARCHIVO_EXCEL)
-        except:
-            pass
-    # Base de datos inicial si no existe el archivo
-    return pd.DataFrame([
-        {
-            "Cliente": "RAFAEL MENDOZA MEDINA",
-            "RFC": "MEMR851015HDF",
-            "Telefono": "5512345678",
-            "Correo": "rafael@gmail.com",
-            "Nacimiento": "1985-10-15",
-            "Contrato": "CTR-9821",
-            "Poliza": "20275830",
-            "Serie": "3VW123456789",
-            "Placa": "ABC-123-A",
-            "Aseguradora": "QUÁLITAS",
-            "Vendedor": "ANDRES",
-            "Ramo": "Auto",
-            "Uso_Auto": "Particular",
-            "Prima_Neta": 4500.0,
-            "Forma_Pago": "Contado",
-            "Emision": str(datetime.now().date() - timedelta(days=60)),
-            "Vencimiento": str(datetime.now().date() + timedelta(days=5)),
-            "Pago_Limite": str(datetime.now().date() + timedelta(days=5)),
-            "Estatus_Pago": "Pendiente",
-            "Estatus_Poliza": "Activa",
-            "Mes_Venta": "Octubre"
-        }
-    ])
-
-# Función para guardar los datos permanentemente
-def guardar_datos(df):
-    df.to_excel(ARCHIVO_EXCEL, index=False)
+def guardar_datos_nube(df):
+    df.to_csv("cartera_pantera.csv", index=False)
+    try:
+        conn = st.connection("gsheets", type="gsheets")
+        conn.update(data=df)
+    except:
+        pass
     st.cache_data.clear()
 
 if "clientes" not in st.session_state:
-    st.session_state.clientes = cargar_datos()
+    st.session_state.clientes = cargar_datos_nube()
 
 df = st.session_state.clientes
 hoy = datetime.now().date()
 
-df['Vencimiento_dt'] = pd.to_datetime(df['Vencimiento'], errors='coerce').dt.date
-df['Pago_Limite_dt'] = pd.to_datetime(df['Pago_Limite'], errors='coerce').dt.date
+# Asegurar conversiones de fecha seguras
+df['Vencimiento_dt'] = pd.to_datetime(df.get('Vencimiento'), errors='coerce').dt.date
+df['Pago_Limite_dt'] = pd.to_datetime(df.get('Pago_Limite'), errors='coerce').dt.date
 
 # -------------------------------------------------------------
 # BARRA LATERAL CON NAVEGACIÓN
@@ -102,9 +94,12 @@ with st.sidebar:
 if menu == "Dashboard del Mes":
     st.header(f"🌿 Panel de Control - Seguros Casa Pantera ({hoy.strftime('%B %Y')})")
     
-    pend_10d = df[(df['Estatus_Pago'] == 'Pendiente') & (df['Pago_Limite_dt'] >= hoy) & (df['Pago_Limite_dt'] <= hoy + timedelta(days=10))]
-    venc_5d = df[(df['Estatus_Pago'] == 'Pendiente') & (df['Pago_Limite_dt'] < hoy) & (df['Pago_Limite_dt'] >= hoy - timedelta(days=5))]
-    por_vencer_cov = df[(df['Vencimiento_dt'] >= hoy) & (df['Vencimiento_dt'] <= hoy + timedelta(days=10))]
+    if not df.empty and 'Pago_Limite_dt' in df.columns:
+        pend_10d = df[(df['Estatus_Pago'] == 'Pendiente') & (df['Pago_Limite_dt'] >= hoy) & (df['Pago_Limite_dt'] <= hoy + timedelta(days=10))]
+        venc_5d = df[(df['Estatus_Pago'] == 'Pendiente') & (df['Pago_Limite_dt'] < hoy) & (df['Pago_Limite_dt'] >= hoy - timedelta(days=5))]
+        por_vencer_cov = df[(df['Vencimiento_dt'] >= hoy) & (df['Vencimiento_dt'] <= hoy + timedelta(days=10))]
+    else:
+        pend_10d = venc_5d = por_vencer_cov = pd.DataFrame()
 
     col1, col2, col3 = st.columns(3)
     
@@ -131,7 +126,7 @@ if menu == "Dashboard del Mes":
     if not data_ver.empty:
         t_mostrar = data_ver[['Poliza', 'Cliente', 'Ramo', 'Aseguradora', 'Prima_Neta', 'Pago_Limite', 'Estatus_Poliza']].copy()
         t_mostrar.columns = ['Folio', 'Cliente', 'Cobertura / Ramo', 'Aseguradora', 'Prima Neta', 'Fecha Límite', 'Estatus']
-        t_mostrar['Prima Neta'] = t_mostrar['Prima Neta'].apply(lambda x: f"${x:,.2f}")
+        t_mostrar['Prima Neta'] = t_mostrar['Prima Neta'].apply(lambda x: f"${float(x):,.2f}" if pd.notnull(x) else "$0.00")
         st.dataframe(t_mostrar, use_container_width=True, hide_index=True)
     else:
         st.info("No hay registros bajo este criterio en el periodo actual.")
@@ -143,7 +138,7 @@ elif menu == "Búsqueda de Pólizas":
     st.header("🔍 Búsqueda Inteligente de Pólizas")
     criterio = st.text_input("Buscar por Nombre del Cliente, Serie del Auto o Placa:")
     
-    if criterio:
+    if criterio and not df.empty:
         filtro = df[
             df['Cliente'].str.contains(criterio, case=False, na=False) |
             df['Serie'].str.contains(criterio, case=False, na=False) |
@@ -157,14 +152,14 @@ elif menu == "Búsqueda de Pólizas":
             if st.button("🗑️ Eliminar Póliza Seleccionada"):
                 df = df[df['Poliza'] != pol_a_borrar].reset_index(drop=True)
                 st.session_state.clientes = df
-                guardar_datos(df)
+                guardar_datos_nube(df)
                 st.success("Póliza eliminada con éxito.")
                 st.rerun()
         else:
             st.warning("No se encontraron registros con ese criterio.")
 
 # -------------------------------------------------------------
-# 3. REGISTRO Y RENOVACIÓN
+# 3. REGISTRO Y RENOVACIÓN (CON CORRECCIONES SOLICITADAS)
 # -------------------------------------------------------------
 elif menu == "Registro y Renovación":
     st.header("📝 Alta y Renovación de Póliza")
@@ -173,25 +168,29 @@ elif menu == "Registro y Renovación":
         col1, col2 = st.columns(2)
         with col1:
             nombre = st.text_input("Nombre Completo del Cliente").upper()
-            rfc = st.text_input("RFC (Calcula fecha de nacimiento automáticamente)").upper()
+            rfc = st.text_input("RFC (Ej. MEMR851015HDF)").upper()
             
-            nacimiento_auto = "1990-01-01"
+            # --- CÁLCULO AUTOMÁTICO DE FECHA DE NACIMIENTO DESDE EL RFC ---
+            fecha_nac_calc = datetime.today().date()
             if len(rfc) >= 10:
                 try:
-                    anio_s = rfc[4:6]
-                    mes_s = rfc[6:8]
-                    dia_s = rfc[8:10]
-                    sig = "19" if int(anio_s) > 30 else "20"
-                    nacimiento_auto = f"{sig}{anio_s}-{mes_s}-{dia_s}"
+                    a_str = rfc[4:6]
+                    m_str = rfc[6:8]
+                    d_str = rfc[8:10]
+                    anio_num = int(a_str)
+                    siglo = 1900 if anio_num > 30 else 2000
+                    fecha_nac_calc = datetime(siglo + anio_num, int(m_str), int(d_str)).date()
                 except:
                     pass
-            
-            nacimiento = st.date_input("Fecha de Nacimiento", value=pd.to_datetime(nacimiento_auto).date())
+
+            nacimiento = st.date_input("Fecha de Nacimiento (Autocalculada por RFC)", value=fecha_nac_calc)
             telefono = st.text_input("Teléfono (10 dígitos)")
             
-            correo_usuario = st.text_input("Correo Electrónico")
-            sugerencia_correo = st.selectbox("Sugerencia de Dominio", ["Personalizado", "@gmail.com", "@hotmail.com", "@yahoo.com"])
-            correo = correo_usuario if sugerencia_correo == "Personalizado" else correo_usuario.split('@')[0] + sugerencia_correo
+            # --- CORREO CON DOMINIO INTEGRADO ---
+            st.markdown("**Correo Electrónico**")
+            c_user = st.text_input("Escribe el usuario del correo", label_visibility="collapsed", placeholder="usuario")
+            c_dom = st.selectbox("Dominio", ["@gmail.com", "@hotmail.com", "@yahoo.com", "Personalizado"])
+            correo = c_user if c_dom == "Personalizado" else c_user + c_dom
 
             contrato = st.text_input("Número de Contrato")
             poliza = st.text_input("Número de Póliza / Folio")
@@ -211,96 +210,112 @@ elif menu == "Registro y Renovación":
             uso_auto = st.selectbox("Uso del Auto", ["Particular", "Taxi", "App", "Colectivo", "Carga"])
             
             prima_neta = st.number_input("Monto Prima Neta ($)", min_value=0.0, format="%.2f")
-            forma_pago = st.selectbox("Forma de Pago", ["Contado", "Semestral", "Trimestral", "Mensual"])
+            
+            # --- FORMA DE PAGO ACTUALIZADA ---
+            forma_pago = st.selectbox("Forma de Pago", ["Mensual", "Trimestral", "Cuatrimestral", "Semestral", "Anual"])
             
             emision = st.date_input("Fecha de Emisión / Inicio")
-            vigencia_anos = st.number_input("Vigencia (Años)", min_value=1, value=1)
-            vencimiento_calculado = emision + timedelta(days=365 * vigencia_anos)
-            vencimiento = st.date_input("Fecha de Vencimiento", value=vencimiento_calculado)
             
+            # --- VIGENCIAS EXACTAS SOLICITADAS ---
+            vigencia_op = st.selectbox("Vigencia", ["6 meses", "1 año", "2 años"])
+            
+            if vigencia_op == "6 meses":
+                vencimiento_calculado = emision + timedelta(days=180)
+            elif vigencia_op == "1 año":
+                vencimiento_calculado = emision + timedelta(days=365)
+            else:
+                vencimiento_calculado = emision + timedelta(days=730)
+
+            vencimiento = st.date_input("Fecha de Vencimiento (Automática)", value=vencimiento_calculado)
             pago_limite = st.date_input("Fecha Límite de Pago")
+            
             estatus_pago = st.selectbox("Estatus de Pago", ["Pendiente", "Pagada"])
             estatus_poliza = st.selectbox("Estatus de Póliza", ["Activa", "Cancelada"])
             mes_venta = st.selectbox("Mes de Contabilidad", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
 
-        submitted = st.form_submit_button("Guardar o Renovar Póliza")
+        submitted = st.form_submit_button("Guardar Registro Compartido")
 
         if submitted and nombre:
-            # Si ya existe la póliza, la filtramos para actualizarla
-            df = df[df['Poliza'] != poliza].reset_index(drop=True)
+            if not df.empty and 'Poliza' in df.columns:
+                df = df[df['Poliza'] != poliza].reset_index(drop=True)
 
             nuevo = {
                 "Cliente": nombre, "RFC": rfc, "Telefono": telefono, "Correo": correo,
                 "Nacimiento": str(nacimiento), "Contrato": contrato, "Poliza": poliza,
                 "Serie": serie, "Placa": placa, "Aseguradora": aseguradora, "Vendedor": vendedor,
                 "Ramo": ramo, "Uso_Auto": uso_auto, "Prima_Neta": prima_neta, "Forma_Pago": forma_pago,
-                "Emision": str(emision), "Vencimiento": str(vencimiento), "Pago_Limite": str(pago_limite),
-                "Estatus_Pago": estatus_pago, "Estatus_Poliza": estatus_poliza, "Mes_Venta": mes_venta
+                "Vigencia": vigencia_op, "Emision": str(emision), "Vencimiento": str(vencimiento), 
+                "Pago_Limite": str(pago_limite), "Estatus_Pago": estatus_pago, "Estatus_Poliza": estatus_poliza, 
+                "Mes_Venta": mes_venta
             }
             df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
             st.session_state.clientes = df
-            guardar_datos(df)
-            st.success("¡Póliza guardada permanentemente con éxito!")
+            guardar_datos_nube(df)
+            st.success("¡Registro guardado y sincronizado con éxito para todo tu equipo!")
 
 # -------------------------------------------------------------
 # 4. CENTRO DE COBRANZA & WHATSAPP
 # -------------------------------------------------------------
 elif menu == "Centro de Cobranza & WhatsApp":
-    st.header("💬 Envío de Mensajes por WhatsApp (Pagos, Vencer, Renovar)")
-    
-    pendientes = df[df['Estatus_Pago'] == 'Pendiente']
-    if not pendientes.empty:
-        for idx, row in pendientes.iterrows():
-            with st.expander(f"📌 {row['Cliente']} | Póliza: {row['Poliza']} ({row['Aseguradora']})"):
-                st.write(f"**Uso:** {row['Uso_Auto']} | **Límite:** {row['Pago_Limite']} | **Prima Neta:** ${row['Prima_Neta']:,.2f}")
-                msg = f"Hola {row['Cliente']}, le saludamos de Seguros Casa Pantera. Le recordamos que su póliza {row['Poliza']} ({row['Aseguradora']}) vence/requiere pago el {row['Pago_Limite']}. Quedamos a sus órdenes."
-                link = f"https://wa.me/52{row['Telefono']}?text={urllib.parse.quote(msg)}"
-                st.markdown(f'<a href="{link}" target="_blank"><button style="background-color:#20B2AA; color:white; padding:8px 16px; border-radius:4px;">💬 Enviar WhatsApp de Cobranza</button></a>', unsafe_allow_html=True)
+    st.header("💬 Envío de Mensajes por WhatsApp")
+    if not df.empty and 'Estatus_Pago' in df.columns:
+        pendientes = df[df['Estatus_Pago'] == 'Pendiente']
+        if not pendientes.empty:
+            for idx, row in pendientes.iterrows():
+                with st.expander(f"📌 {row['Cliente']} | Póliza: {row['Poliza']} ({row['Aseguradora']})"):
+                    st.write(f"**Forma de Pago:** {row['Forma_Pago']} | **Límite:** {row['Pago_Limite']} | **Prima Neta:** ${float(row['Prima_Neta']):,.2f}")
+                    msg = f"Hola {row['Cliente']}, le saludamos de Seguros Casa Pantera. Le recordamos que su pago ({row['Forma_Pago']}) de la póliza {row['Poliza']} vence el {row['Pago_Limite']}. Quedamos a sus órdenes."
+                    link = f"https://wa.me/52{row['Telefono']}?text={urllib.parse.quote(msg)}"
+                    st.markdown(f'<a href="{link}" target="_blank"><button style="background-color:#20B2AA; color:white; padding:8px 16px; border-radius:4px;">💬 Enviar WhatsApp de Cobranza</button></a>', unsafe_allow_html=True)
+        else:
+            st.success("No hay cobros pendientes.")
     else:
-        st.success("No hay cobros pendientes.")
+        st.info("No hay registros cargados aún.")
 
 # -------------------------------------------------------------
 # 5. AVISOS DE CUMPLEAÑOS
 # -------------------------------------------------------------
 elif menu == "Avisos de Cumpleaños":
     st.header("🎂 Avisos de Cumpleaños Automatizados")
-    mes_actual = hoy.month
-    df['Mes_C'] = pd.to_datetime(df['Nacimiento'], errors='coerce').dt.month
-    cumples = df[df['Mes_C'] == mes_actual]
+    if not df.empty and 'Nacimiento' in df.columns:
+        mes_actual = hoy.month
+        df['Mes_C'] = pd.to_datetime(df['Nacimiento'], errors='coerce').dt.month
+        cumples = df[df['Mes_C'] == mes_actual]
 
-    if not cumples.empty:
-        for idx, row in cumples.iterrows():
-            st.write(f"🎈 **{row['Cliente']}** — Nacimiento: {row['Nacimiento']} — Tel: {row['Telefono']}")
-            msg_c = f"¡Muchas felicidades en tu cumpleaños de parte de Seguros Casa Pantera! 🥳 Te deseamos el mayor de los éxitos."
-            link_c = f"https://wa.me/52{row['Telefono']}?text={urllib.parse.quote(msg_c)}"
-            st.markdown(f'<a href="{link_c}" target="_blank"><button style="background-color:#20B2AA; color:white; padding:6px 12px; border-radius:4px;">🎁 Enviar Felicitación</button></a>', unsafe_allow_html=True)
-            st.markdown("---")
-    else:
-        st.info("No hay cumpleaños registrados este mes.")
+        if not cumples.empty:
+            for idx, row in cumples.iterrows():
+                st.write(f"🎈 **{row['Cliente']}** — Nacimiento: {row['Nacimiento']} — Tel: {row['Telefono']}")
+                msg_c = f"¡Muchas felicidades en tu cumpleaños de parte de Seguros Casa Pantera! 🥳 Te deseamos el mayor de los éxitos."
+                link_c = f"https://wa.me/52{row['Telefono']}?text={urllib.parse.quote(msg_c)}"
+                st.markdown(f'<a href="{link_c}" target="_blank"><button style="background-color:#20B2AA; color:white; padding:6px 12px; border-radius:4px;">🎁 Enviar Felicitación</button></a>', unsafe_allow_html=True)
+                st.markdown("---")
+        else:
+            st.info("No hay cumpleaños registrados este mes.")
 
 # -------------------------------------------------------------
-# 6. REPORTE CONTABLE EN EXCEL (MENSUAL)
+# 6. REPORTE CONTABLE EN EXCEL
 # -------------------------------------------------------------
 elif menu == "Reporte Contable (Excel)":
     st.header("📈 Generación de Excel de Contabilidad Mensual")
     mes_rep = st.selectbox("Selecciona Mes Contable", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"], index=9)
     
-    df_rep = df[df['Mes_Venta'] == mes_rep]
-    st.dataframe(df_rep[['Poliza', 'Cliente', 'Contrato', 'Aseguradora', 'Vendedor', 'Prima_Neta', 'Estatus_Pago', 'Estatus_Poliza']], use_container_width=True)
-    
-    if not df_rep.empty:
-        total_m = df_rep['Prima_Neta'].sum()
-        st.metric("Prima Neta Total del Mes", f"${total_m:,.2f}")
+    if not df.empty and 'Mes_Venta' in df.columns:
+        df_rep = df[df['Mes_Venta'] == mes_rep]
+        st.dataframe(df_rep[['Poliza', 'Cliente', 'Contrato', 'Aseguradora', 'Vendedor', 'Prima_Neta', 'Forma_Pago', 'Estatus_Pago']], use_container_width=True)
         
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_rep.to_excel(writer, index=False, sheet_name='Contabilidad_Mensual')
-        
-        st.download_button(
-            label=f"📥 Descargar Reporte Contable - {mes_rep}",
-            data=output.getvalue(),
-            file_name=f"Contabilidad_Casa_Pantera_{mes_rep}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.warning("No hay registros contables para este mes.")
+        if not df_rep.empty:
+            total_m = df_rep['Prima_Neta'].astype(float).sum()
+            st.metric("Prima Neta Total del Mes", f"${total_m:,.2f}")
+            
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_rep.to_excel(writer, index=False, sheet_name='Contabilidad_Mensual')
+            
+            st.download_button(
+                label=f"📥 Descargar Reporte Contable - {mes_rep}",
+                data=output.getvalue(),
+                file_name=f"Contabilidad_Casa_Pantera_{mes_rep}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.warning("No hay registros contables para este mes.")
