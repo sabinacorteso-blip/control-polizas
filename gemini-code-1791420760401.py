@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import urllib.parse
+import io
 
 # Configuración de la página con tema visual en Verde Agua
 st.set_page_config(page_title="Seguros Casa Pantera - CRM", layout="wide")
@@ -12,17 +13,37 @@ st.markdown("""
         background-color: #F4FBFB;
     }
     h1, h2, h3 {
-        color: #006666;
+        color: #004D4D;
     }
     .stButton>button {
-        background-color: #20B2AA;
+        background-color: #008080;
         color: white;
         border-radius: 6px;
         border: none;
+        font-weight: bold;
     }
     .stButton>button:hover {
-        background-color: #008080;
+        background-color: #005959;
         color: white;
+    }
+    /* ESTILOS DE ALTO CONTRASTE PARA LOS CAMPOS DE ENTRADA DE DATOS */
+    input, select, textarea, div[data-baseweb="select"] > div, div[data-baseweb="input"] > div {
+        background-color: #FFFFFF !important;
+        border: 2px solid #20B2AA !important;
+        border-radius: 6px !important;
+        color: #003333 !important;
+        font-weight: 500 !important;
+    }
+    /* EFECTO AL SELECCIONAR O ESCRIBIR EN UN CAMPO */
+    input:focus, select:focus, div[data-baseweb="select"] > div:focus-within {
+        border: 2px solid #006666 !important;
+        box-shadow: 0 0 5px rgba(32, 178, 170, 0.5) !important;
+    }
+    /* ETIQUETAS DE LOS CAMPOS */
+    label p {
+        color: #004D4D !important;
+        font-weight: bold !important;
+        font-size: 15px !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -224,12 +245,9 @@ elif menu == "Registro y Renovación":
             estatus_poliza = st.selectbox("Estatus de Póliza", ["Activa", "Cancelada"])
             mes_venta = st.selectbox("Mes de Contabilidad", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"], index=9)
 
-        submitted = st.form_submit_button("Guardar Registro Compartido")
+        submitted = st.form_submit_button("Guardar Registro en Cartera")
 
         if submitted and nombre:
-            if not df.empty and 'Poliza' in df.columns:
-                df = df[df['Poliza'] != poliza].reset_index(drop=True)
-
             nuevo = {
                 "Cliente": nombre, "RFC": rfc, "Telefono": telefono, "Correo": correo,
                 "Nacimiento": str(nacimiento), "Contrato": contrato, "Poliza": poliza,
@@ -242,7 +260,7 @@ elif menu == "Registro y Renovación":
             df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
             st.session_state.clientes = df
             guardar_datos_nube(df)
-            st.success("¡Registro guardado y sincronizado con éxito para todo tu equipo!")
+            st.success("¡Nuevo registro guardado con éxito! Se acumuló en la base de datos.")
 
 # -------------------------------------------------------------
 # 4. CENTRO DE COBRANZA & WHATSAPP
@@ -257,7 +275,7 @@ elif menu == "Centro de Cobranza & WhatsApp":
                     st.write(f"**Forma de Pago:** {row['Forma_Pago']} | **Límite:** {row['Pago_Limite']} | **Prima Neta:** ${float(row['Prima_Neta']):,.2f}")
                     msg = f"Hola {row['Cliente']}, le saludamos de Seguros Casa Pantera. Le recordamos que su pago ({row['Forma_Pago']}) de la póliza {row['Poliza']} vence el {row['Pago_Limite']}. Quedamos a sus órdenes."
                     link = f"https://wa.me/52{row['Telefono']}?text={urllib.parse.quote(msg)}"
-                    st.markdown(f'<a href="{link}" target="_blank"><button style="background-color:#20B2AA; color:white; padding:8px 16px; border-radius:4px;">💬 Enviar WhatsApp de Cobranza</button></a>', unsafe_allow_html=True)
+                    st.markdown(f'<a href="{link}" target="_blank"><button style="background-color:#008080; color:white; padding:8px 16px; border-radius:4px; font-weight:bold;">💬 Enviar WhatsApp de Cobranza</button></a>', unsafe_allow_html=True)
         else:
             st.success("No hay cobros pendientes.")
     else:
@@ -278,7 +296,7 @@ elif menu == "Avisos de Cumpleaños":
                 st.write(f"🎈 **{row['Cliente']}** — Nacimiento: {row['Nacimiento']} — Tel: {row['Telefono']}")
                 msg_c = f"¡Muchas felicidades en tu cumpleaños de parte de Seguros Casa Pantera! 🥳 Te deseamos el mayor de los éxitos."
                 link_c = f"https://wa.me/52{row['Telefono']}?text={urllib.parse.quote(msg_c)}"
-                st.markdown(f'<a href="{link_c}" target="_blank"><button style="background-color:#20B2AA; color:white; padding:6px 12px; border-radius:4px;">🎁 Enviar Felicitación</button></a>', unsafe_allow_html=True)
+                st.markdown(f'<a href="{link_c}" target="_blank"><button style="background-color:#008080; color:white; padding:6px 12px; border-radius:4px; font-weight:bold;">🎁 Enviar Felicitación</button></a>', unsafe_allow_html=True)
                 st.markdown("---")
         else:
             st.info("No hay cumpleaños registrados este mes.")
@@ -289,7 +307,6 @@ elif menu == "Avisos de Cumpleaños":
 elif menu == "Reporte Contable (Excel)":
     st.header("📈 Generación de Excel de Contabilidad Mensual")
     
-    # Opción para ver TODOS los registros sin importar el mes, o filtrar por uno en específico
     modo_ver = st.radio("Visualización", ["Filtrar por Mes Específico", "Ver Todos los Registros Históricos"], horizontal=True)
     
     if not df.empty:
@@ -302,7 +319,7 @@ elif menu == "Reporte Contable (Excel)":
         st.dataframe(df_rep[['Poliza', 'Cliente', 'Contrato', 'Aseguradora', 'Vendedor', 'Prima_Neta', 'Forma_Pago', 'Estatus_Pago', 'Mes_Venta']], use_container_width=True)
         
         if not df_rep.empty:
-            total_m = df_rep['Prima_Neta'].astype(float).sum()
+            total_m = pd.to_numeric(df_rep['Prima_Neta'], errors='coerce').sum()
             st.metric("Prima Neta Total", f"${total_m:,.2f}")
             
             output = io.BytesIO()
