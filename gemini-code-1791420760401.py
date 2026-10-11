@@ -2,19 +2,16 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import io
+import os
 import urllib.parse
 
 # Configuración de la página con tema visual en Verde Agua
 st.set_page_config(page_title="Seguros Casa Pantera - CRM", layout="wide")
 
-# Estilos CSS personalizados para aplicar tonos Verde Agua (#008080, #20B2AA, #E0F2F1)
 st.markdown("""
     <style>
     .stApp {
         background-color: #F4FBFB;
-    }
-    .css-18e3th9 {
-        background-color: #E0F2F1;
     }
     h1, h2, h3 {
         color: #006666;
@@ -32,11 +29,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Simulación de base de datos inicial
-hoy = datetime.now().date()
+# Archivo local en GitHub para guardar la información permanentemente
+ARCHIVO_EXCEL = "cartera_clientes.xlsx"
 
-if "clientes" not in st.session_state:
-    st.session_state.clientes = pd.DataFrame([
+# Función para cargar los datos desde Excel
+@st.cache_data(ttl=1)
+def cargar_datos():
+    if os.path.exists(ARCHIVO_EXCEL):
+        try:
+            return pd.read_excel(ARCHIVO_EXCEL)
+        except:
+            pass
+    # Base de datos inicial si no existe el archivo
+    return pd.DataFrame([
         {
             "Cliente": "RAFAEL MENDOZA MEDINA",
             "RFC": "MEMR851015HDF",
@@ -53,20 +58,31 @@ if "clientes" not in st.session_state:
             "Uso_Auto": "Particular",
             "Prima_Neta": 4500.0,
             "Forma_Pago": "Contado",
-            "Emision": str(hoy - timedelta(days=60)),
-            "Vencimiento": str(hoy + timedelta(days=5)),
-            "Pago_Limite": str(hoy + timedelta(days=5)),
+            "Emision": str(datetime.now().date() - timedelta(days=60)),
+            "Vencimiento": str(datetime.now().date() + timedelta(days=5)),
+            "Pago_Limite": str(datetime.now().date() + timedelta(days=5)),
             "Estatus_Pago": "Pendiente",
             "Estatus_Poliza": "Activa",
             "Mes_Venta": "Octubre"
         }
     ])
 
-if "historico" not in st.session_state:
-    st.session_state.historico = pd.DataFrame(columns=st.session_state.clientes.columns)
+# Función para guardar los datos permanentemente
+def guardar_datos(df):
+    df.to_excel(ARCHIVO_EXCEL, index=False)
+    st.cache_data.clear()
+
+if "clientes" not in st.session_state:
+    st.session_state.clientes = cargar_datos()
+
+df = st.session_state.clientes
+hoy = datetime.now().date()
+
+df['Vencimiento_dt'] = pd.to_datetime(df['Vencimiento'], errors='coerce').dt.date
+df['Pago_Limite_dt'] = pd.to_datetime(df['Pago_Limite'], errors='coerce').dt.date
 
 # -------------------------------------------------------------
-# BARRA LATERAL CON LOGO Y NAVEGACIÓN
+# BARRA LATERAL CON NAVEGACIÓN
 # -------------------------------------------------------------
 with st.sidebar:
     st.markdown("## 🐆 **CASA PANTERA**")
@@ -80,12 +96,8 @@ with st.sidebar:
         "Reporte Contable (Excel)"
     ])
 
-df = st.session_state.clientes
-df['Vencimiento_dt'] = pd.to_datetime(df['Vencimiento']).dt.date
-df['Pago_Limite_dt'] = pd.to_datetime(df['Pago_Limite']).dt.date
-
 # -------------------------------------------------------------
-# 1. DASHBOARD DEL MES (VENTANAS EMERGENTES / ACCESO A INFORMACIÓN)
+# 1. DASHBOARD DEL MES
 # -------------------------------------------------------------
 if menu == "Dashboard del Mes":
     st.header(f"🌿 Panel de Control - Seguros Casa Pantera ({hoy.strftime('%B %Y')})")
@@ -107,7 +119,7 @@ if menu == "Dashboard del Mes":
     st.markdown("---")
 
     if vista == "pendientes":
-        st.subheader("📋 Listado - Pendientes de Pago (Tipo y Cantidad)")
+        st.subheader("📋 Listado - Pendientes de Pago")
         data_ver = pend_10d
     elif vista == "vencidos":
         st.subheader("📋 Listado - Pagos Vencidos")
@@ -125,7 +137,7 @@ if menu == "Dashboard del Mes":
         st.info("No hay registros bajo este criterio en el periodo actual.")
 
 # -------------------------------------------------------------
-# 2. BÚSQUEDA DE PÓLIZAS (SERIE, NOMBRE, PLACA)
+# 2. BÚSQUEDA DE PÓLIZAS
 # -------------------------------------------------------------
 elif menu == "Búsqueda de Pólizas":
     st.header("🔍 Búsqueda Inteligente de Pólizas")
@@ -141,16 +153,18 @@ elif menu == "Búsqueda de Pólizas":
             st.success(f"Se encontraron {len(filtro)} coincidencia(s):")
             st.dataframe(filtro[['Poliza', 'Cliente', 'Serie', 'Placa', 'Aseguradora', 'Vencimiento', 'Estatus_Poliza']], use_container_width=True, hide_index=True)
             
-            # Botón para eliminar o quitar póliza
-            pol_a_borrar = st.selectbox("Seleccione número de póliza a eliminar/quitar si es necesario:", filtro['Poliza'].tolist())
+            pol_a_borrar = st.selectbox("Seleccione número de póliza a eliminar si es necesario:", filtro['Poliza'].tolist())
             if st.button("🗑️ Eliminar Póliza Seleccionada"):
-                st.session_state.clientes = df[df['Poliza'] != pol_a_borrar].reset_index(drop=True)
+                df = df[df['Poliza'] != pol_a_borrar].reset_index(drop=True)
+                st.session_state.clientes = df
+                guardar_datos(df)
+                st.success("Póliza eliminada con éxito.")
                 st.rerun()
         else:
             st.warning("No se encontraron registros con ese criterio.")
 
 # -------------------------------------------------------------
-# 3. REGISTRO Y RENOVACIÓN (CON AUTOCÁLCULOS Y RFC)
+# 3. REGISTRO Y RENOVACIÓN
 # -------------------------------------------------------------
 elif menu == "Registro y Renovación":
     st.header("📝 Alta y Renovación de Póliza")
@@ -161,7 +175,6 @@ elif menu == "Registro y Renovación":
             nombre = st.text_input("Nombre Completo del Cliente").upper()
             rfc = st.text_input("RFC (Calcula fecha de nacimiento automáticamente)").upper()
             
-            # Autocálculo de fecha de nacimiento basada en RFC (ej: VELA851015...)
             nacimiento_auto = "1990-01-01"
             if len(rfc) >= 10:
                 try:
@@ -173,10 +186,9 @@ elif menu == "Registro y Renovación":
                 except:
                     pass
             
-            nacimiento = st.date_input("Fecha de Nacimiento (Autocalculada por RFC)", value=pd.to_datetime(nacimiento_auto).date())
+            nacimiento = st.date_input("Fecha de Nacimiento", value=pd.to_datetime(nacimiento_auto).date())
             telefono = st.text_input("Teléfono (10 dígitos)")
             
-            # Correo con opciones sugeridas
             correo_usuario = st.text_input("Correo Electrónico")
             sugerencia_correo = st.selectbox("Sugerencia de Dominio", ["Personalizado", "@gmail.com", "@hotmail.com", "@yahoo.com"])
             correo = correo_usuario if sugerencia_correo == "Personalizado" else correo_usuario.split('@')[0] + sugerencia_correo
@@ -201,11 +213,10 @@ elif menu == "Registro y Renovación":
             prima_neta = st.number_input("Monto Prima Neta ($)", min_value=0.0, format="%.2f")
             forma_pago = st.selectbox("Forma de Pago", ["Contado", "Semestral", "Trimestral", "Mensual"])
             
-            # Cálculo automático de vencimiento al ingresar emisión
             emision = st.date_input("Fecha de Emisión / Inicio")
             vigencia_anos = st.number_input("Vigencia (Años)", min_value=1, value=1)
             vencimiento_calculado = emision + timedelta(days=365 * vigencia_anos)
-            vencimiento = st.date_input("Fecha de Vencimiento (Calculada Automática)", value=vencimiento_calculado)
+            vencimiento = st.date_input("Fecha de Vencimiento", value=vencimiento_calculado)
             
             pago_limite = st.date_input("Fecha Límite de Pago")
             estatus_pago = st.selectbox("Estatus de Pago", ["Pendiente", "Pagada"])
@@ -215,12 +226,8 @@ elif menu == "Registro y Renovación":
         submitted = st.form_submit_button("Guardar o Renovar Póliza")
 
         if submitted and nombre:
-            # Sistema de detección de renovación: si la póliza ya existe, archiva la anterior
-            if not df[df['Poliza'] == poliza].empty:
-                anterior = df[df['Poliza'] == poliza]
-                st.session_state.historico = pd.concat([st.session_state.historico, anterior], ignore_index=True)
-                st.session_state.clientes = df[df['Poliza'] != poliza].reset_index(drop=True)
-                st.info("🔄 Póliza anterior archivada en el respaldo histórico por renovación.")
+            # Si ya existe la póliza, la filtramos para actualizarla
+            df = df[df['Poliza'] != poliza].reset_index(drop=True)
 
             nuevo = {
                 "Cliente": nombre, "RFC": rfc, "Telefono": telefono, "Correo": correo,
@@ -230,8 +237,10 @@ elif menu == "Registro y Renovación":
                 "Emision": str(emision), "Vencimiento": str(vencimiento), "Pago_Limite": str(pago_limite),
                 "Estatus_Pago": estatus_pago, "Estatus_Poliza": estatus_poliza, "Mes_Venta": mes_venta
             }
-            st.session_state.clientes = pd.concat([st.session_state.clientes, pd.DataFrame([nuevo])], ignore_index=True)
-            st.success("¡Póliza registrada y actualizada con éxito!")
+            df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
+            st.session_state.clientes = df
+            guardar_datos(df)
+            st.success("¡Póliza guardada permanentemente con éxito!")
 
 # -------------------------------------------------------------
 # 4. CENTRO DE COBRANZA & WHATSAPP
