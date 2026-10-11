@@ -162,17 +162,16 @@ elif menu == "Registro y Renovación":
             nombre = st.text_input("Nombre Completo del Cliente").upper()
             rfc = st.text_input("RFC o Texto (Ej. MEMR851015HDF o 720806)").upper()
             
-            # --- EXTRACCIÓN INTELIGENTE DE FECHA DE NACIMIENTO ---
-            fecha_nac_calc = datetime.today().date()
+            fecha_nac_calc = datetime(1990, 1, 1).date()
             limpio = "".join([c for c in rfc if c.isdigit()])
-            if len(rfc) >= 10:  # RFC estándar de 13 caracteres (posiciones 4 a 9 son AAMMDD)
+            if len(rfc) >= 10:
                 try:
                     a_str, m_str, d_str = rfc[4:6], rfc[6:8], rfc[8:10]
                     siglo = 1900 if int(a_str) > 30 else 2000
                     fecha_nac_calc = datetime(siglo + int(a_str), int(m_str), int(d_str)).date()
                 except:
                     pass
-            elif len(limpio) >= 6:  # Si ingresa directo 6 dígitos (AAMMDD)
+            elif len(limpio) >= 6:
                 try:
                     a_str, m_str, d_str = limpio[:2], limpio[2:4], limpio[4:6]
                     siglo = 1900 if int(a_str) > 30 else 2000
@@ -180,7 +179,7 @@ elif menu == "Registro y Renovación":
                 except:
                     pass
 
-            nacimiento = st.date_input("Fecha de Nacimiento (Autocalculada)", value=fecha_nac_calc)
+            nacimiento = st.date_input("Fecha de Nacimiento (Autocalculada con Enter)", value=fecha_nac_calc)
             telefono = st.text_input("Teléfono (10 dígitos)")
             
             st.markdown("**Correo Electrónico**")
@@ -206,13 +205,9 @@ elif menu == "Registro y Renovación":
             uso_auto = st.selectbox("Uso del Auto", ["Particular", "Taxi", "App", "Colectivo", "Carga"])
             
             prima_neta = st.number_input("Monto Prima Neta ($)", min_value=0.0, format="%.2f")
-            
-            # --- FORMA DE PAGO ACTUALIZADA ---
             forma_pago = st.selectbox("Forma de Pago", ["Mensual", "Trimestral", "Cuatrimestral", "Semestral", "Anual"])
             
             emision = st.date_input("Fecha de Emisión / Inicio")
-            
-            # --- VIGENCIAS EXACTAS ---
             vigencia_op = st.selectbox("Vigencia", ["6 meses", "1 año", "2 años"])
             
             if vigencia_op == "6 meses":
@@ -227,7 +222,7 @@ elif menu == "Registro y Renovación":
             
             estatus_pago = st.selectbox("Estatus de Pago", ["Pendiente", "Pagada"])
             estatus_poliza = st.selectbox("Estatus de Póliza", ["Activa", "Cancelada"])
-            mes_venta = st.selectbox("Mes de Contabilidad", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
+            mes_venta = st.selectbox("Mes de Contabilidad", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"], index=9)
 
         submitted = st.form_submit_button("Guardar Registro Compartido")
 
@@ -293,25 +288,34 @@ elif menu == "Avisos de Cumpleaños":
 # -------------------------------------------------------------
 elif menu == "Reporte Contable (Excel)":
     st.header("📈 Generación de Excel de Contabilidad Mensual")
-    mes_rep = st.selectbox("Selecciona Mes Contable", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"], index=9)
     
-    if not df.empty and 'Mes_Venta' in df.columns:
-        df_rep = df[df['Mes_Venta'] == mes_rep]
-        st.dataframe(df_rep[['Poliza', 'Cliente', 'Contrato', 'Aseguradora', 'Vendedor', 'Prima_Neta', 'Forma_Pago', 'Estatus_Pago']], use_container_width=True)
+    # Opción para ver TODOS los registros sin importar el mes, o filtrar por uno en específico
+    modo_ver = st.radio("Visualización", ["Filtrar por Mes Específico", "Ver Todos los Registros Históricos"], horizontal=True)
+    
+    if not df.empty:
+        if modo_ver == "Filtrar por Mes Específico":
+            mes_rep = st.selectbox("Selecciona Mes Contable", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"], index=9)
+            df_rep = df[df['Mes_Venta'] == mes_rep]
+        else:
+            df_rep = df
+            
+        st.dataframe(df_rep[['Poliza', 'Cliente', 'Contrato', 'Aseguradora', 'Vendedor', 'Prima_Neta', 'Forma_Pago', 'Estatus_Pago', 'Mes_Venta']], use_container_width=True)
         
         if not df_rep.empty:
             total_m = df_rep['Prima_Neta'].astype(float).sum()
-            st.metric("Prima Neta Total del Mes", f"${total_m:,.2f}")
+            st.metric("Prima Neta Total", f"${total_m:,.2f}")
             
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_rep.to_excel(writer, index=False, sheet_name='Contabilidad_Mensual')
+                df_rep.to_excel(writer, index=False, sheet_name='Contabilidad')
             
             st.download_button(
-                label=f"📥 Descargar Reporte Contable - {mes_rep}",
+                label="📥 Descargar Reporte en Excel",
                 data=output.getvalue(),
-                file_name=f"Contabilidad_Casa_Pantera_{mes_rep}.xlsx",
+                file_name="Contabilidad_Casa_Pantera.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            st.warning("No hay registros contables para este mes.")
+            st.warning("No hay registros en esta selección.")
+    else:
+        st.info("Aún no hay pólizas registradas en la base de datos.")
