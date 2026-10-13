@@ -53,7 +53,9 @@ ARCHIVO_HISTORICO = "historico_renovadas.csv"
 def cargar_datos():
     if os.path.exists(ARCHIVO_CSV):
         try:
-            return pd.read_csv(ARCHIVO_CSV)
+            df = pd.read_csv(ARCHIVO_CSV)
+            df = df.fillna("") # Limpia valores vacíos o NaN
+            return df
         except:
             pass
     return pd.DataFrame(columns=[
@@ -70,7 +72,8 @@ def guardar_datos(df):
 def cargar_historico():
     if os.path.exists(ARCHIVO_HISTORICO):
         try:
-            return pd.read_csv(ARCHIVO_HISTORICO)
+            df = pd.read_csv(ARCHIVO_HISTORICO)
+            return df.fillna("")
         except:
             pass
     return pd.DataFrame(columns=cargar_datos().columns)
@@ -144,24 +147,25 @@ if menu == "Dashboard del Mes":
     if not data_ver.empty:
         t_mostrar = data_ver[['Poliza', 'Cliente', 'Ramo', 'Aseguradora', 'Prima_Neta', 'Pago_Limite', 'Estatus_Poliza']].copy()
         t_mostrar.columns = ['Folio', 'Cliente', 'Cobertura / Ramo', 'Aseguradora', 'Prima Neta', 'Fecha Límite', 'Estatus']
-        t_mostrar['Prima Neta'] = t_mostrar['Prima Neta'].apply(lambda x: f"${float(x):,.2f}" if pd.notnull(x) else "$0.00")
+        t_mostrar['Prima Neta'] = t_mostrar['Prima Neta'].apply(lambda x: f"${float(x):,.2f}" if pd.notnull(x) and str(x).strip()!="" else "$0.00")
         st.dataframe(t_mostrar, use_container_width=True, hide_index=True)
     else:
         st.info("No hay registros bajo este criterio en el periodo actual.")
 
 # -------------------------------------------------------------
-# 2. BÚSQUEDA Y EDICIÓN DE PÓLIZAS
+# 2. BÚSQUEDA Y EDICIÓN DE PÓLIZAS (CORREGIDO Y SEGURO)
 # -------------------------------------------------------------
 elif menu == "Búsqueda y Edición":
     st.header("🔍 Búsqueda y Edición de Pólizas")
     criterio = st.text_input("Buscar por Nombre del Cliente, Número de Póliza, Serie o Placa:")
     
     if criterio and not df.empty:
+        # Búsqueda segura convirtiendo a string
         filtro = df[
-            df['Cliente'].str.contains(criterio, case=False, na=False) |
-            df['Poliza'].str.contains(criterio, case=False, na=False) |
-            df['Serie'].str.contains(criterio, case=False, na=False) |
-            df['Placa'].str.contains(criterio, case=False, na=False)
+            df['Cliente'].astype(str).str.contains(criterio, case=False, na=False) |
+            df['Poliza'].astype(str).str.contains(criterio, case=False, na=False) |
+            df['Serie'].astype(str).str.contains(criterio, case=False, na=False) |
+            df['Placa'].astype(str).str.contains(criterio, case=False, na=False)
         ]
         if not filtro.empty:
             st.success(f"Se encontraron {len(filtro)} coincidencia(s):")
@@ -169,35 +173,53 @@ elif menu == "Búsqueda y Edición":
             
             st.markdown("---")
             st.subheader("✏️ Editar Póliza Seleccionada")
-            pol_a_editar = st.selectbox("Seleccione el número de póliza que desea modificar:", filtro['Poliza'].tolist())
             
-            if pol_a_editar:
-                row_edit = df[df['Poliza'] == pol_a_editar].iloc[0]
-                with st.form("form_edicion"):
-                    c_ed1, c_ed2 = st.columns(2)
-                    with c_ed1:
-                        nuevo_cliente = st.text_input("Cliente", value=str(row_edit['Cliente']))
-                        nuevo_tel = st.text_input("Teléfono", value=str(row_edit['Telefono']))
-                        nueva_prima = st.number_input("Prima Neta ($)", value=float(row_edit['Prima_Neta']), format="%.2f")
-                        nuevo_estatus_pago = st.selectbox("Estatus de Pago", ["Pendiente", "Pagada"], index=0 if row_edit['Estatus_Pago']=="Pendiente" else 1)
-                    with c_ed2:
-                        nuevo_estatus_poliza = st.selectbox("Estatus de Póliza", ["Activa", "Cancelada (Falta de Pago)"], index=0 if "Activa" in str(row_edit['Estatus_Poliza']) else 1)
-                        nueva_aseg = st.text_input("Aseguradora", value=str(row_edit['Aseguradora']))
-                        
-                    btn_guardar_cambios = st.form_submit_button("Guardar Cambios de Edición")
+            # Creamos identificadores limpios para el selector
+            lista_opciones = []
+            for idx, r in filtro.iterrows():
+                p_val = str(r['Poliza']) if pd.notnull(r['Poliza']) and str(r['Poliza']).strip() != "" else f"SIN_POLIZA_{idx}"
+                lista_opciones.append((p_val, idx))
+            
+            sel_etiqueta = st.selectbox("Seleccione el registro que desea modificar:", [op[0] for op in lista_opciones])
+            
+            # Encontramos el índice real del renglón seleccionado
+            idx_real = [op[1] for op in lista_opciones if op[0] == sel_etiqueta][0]
+            row_edit = df.loc[idx_real]
+            
+            with st.form("form_edicion"):
+                c_ed1, c_ed2 = st.columns(2)
+                with c_ed1:
+                    nuevo_cliente = st.text_input("Cliente", value=str(row_edit['Cliente']))
+                    nuevo_tel = st.text_input("Teléfono", value=str(row_edit['Telefono']))
+                    val_prima = float(row_edit['Prima_Neta']) if pd.notnull(row_edit['Prima_Neta']) and str(row_edit['Prima_Neta']).strip()!="" else 0.0
+                    nueva_prima = st.number_input("Prima Neta ($)", value=val_prima, format="%.2f")
                     
-                    if btn_guardar_cambios:
-                        df.loc[df['Poliza'] == pol_a_editar, 'Cliente'] = nuevo_cliente.upper()
-                        df.loc[df['Poliza'] == pol_a_editar, 'Telefono'] = nuevo_tel
-                        df.loc[df['Poliza'] == pol_a_editar, 'Prima_Neta'] = nueva_prima
-                        df.loc[df['Poliza'] == pol_a_editar, 'Estatus_Pago'] = nuevo_estatus_pago
-                        df.loc[df['Poliza'] == pol_a_editar, 'Estatus_Poliza'] = nuevo_estatus_poliza
-                        df.loc[df['Poliza'] == pol_a_editar, 'Aseguradora'] = nueva_aseg.upper()
-                        
-                        st.session_state.clientes = df
-                        guardar_datos(df)
-                        st.success("¡Póliza actualizada correctamente!")
-                        st.rerun()
+                    est_pago_actual = str(row_edit['Estatus_Pago'])
+                    idx_pago = 1 if est_pago_actual == "Pagada" else 0
+                    nuevo_estatus_pago = st.selectbox("Estatus de Pago", ["Pendiente", "Pagada"], index=idx_pago)
+                with c_ed2:
+                    est_pol_actual = str(row_edit['Estatus_Poliza'])
+                    idx_pol = 1 if "Cancelada" in est_pol_actual else 0
+                    nuevo_estatus_poliza = st.selectbox("Estatus de Póliza", ["Activa", "Cancelada (Falta de Pago)"], index=idx_pol)
+                    
+                    nueva_aseg = st.text_input("Aseguradora", value=str(row_edit['Aseguradora']))
+                    nueva_poliza_num = st.text_input("Número de Póliza", value=str(row_edit['Poliza']))
+                    
+                btn_guardar_cambios = st.form_submit_button("Guardar Cambios de Edición")
+                
+                if btn_guardar_cambios:
+                    df.loc[idx_real, 'Cliente'] = nuevo_cliente.upper()
+                    df.loc[idx_real, 'Telefono'] = nuevo_tel
+                    df.loc[idx_real, 'Prima_Neta'] = nueva_prima
+                    df.loc[idx_real, 'Estatus_Pago'] = nuevo_estatus_pago
+                    df.loc[idx_real, 'Estatus_Poliza'] = nuevo_estatus_poliza
+                    df.loc[idx_real, 'Aseguradora'] = nueva_aseg.upper()
+                    df.loc[idx_real, 'Poliza'] = nueva_poliza_num
+                    
+                    st.session_state.clientes = df
+                    guardar_datos(df)
+                    st.success("¡Póliza actualizada correctamente!")
+                    st.rerun()
         else:
             st.warning("No se encontraron registros con ese criterio.")
     else:
@@ -280,15 +302,6 @@ elif menu == "Registro y Renovación":
         submitted = st.form_submit_button("Guardar Nuevo Registro en Cartera")
 
         if submitted and nombre:
-            # Lógica exacta para control de renovación o alta limpia
-            if not df.empty and poliza in df['Poliza'].values and poliza.strip() != "":
-                poliza_anterior = df[df['Poliza'] == poliza].copy()
-                poliza_anterior['Estatus_Poliza'] = "RENOVADA (HISTÓRICO)"
-                historico_df = pd.concat([historico_df, poliza_anterior], ignore_index=True)
-                st.session_state.historico = historico_df
-                guardar_historico(historico_df)
-                df = df[df['Poliza'] != poliza].reset_index(drop=True)
-
             nuevo = {
                 "Cliente": nombre, "RFC": rfc, "Telefono": telefono, "Correo": correo,
                 "Nacimiento": str(nacimiento), "Contrato": contrato, "Poliza": poliza,
@@ -301,7 +314,7 @@ elif menu == "Registro y Renovación":
             df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
             st.session_state.clientes = df
             guardar_datos(df)
-            st.success("¡Registro guardado con éxito! Se añadió correctamente a la base de datos sin sobrescribir.")
+            st.success("¡Registro guardado con éxito! Se añadió limpiamente a la base de datos.")
 
 # -------------------------------------------------------------
 # 4. CENTRO DE COBRANZA & WHATSAPP
@@ -313,7 +326,7 @@ elif menu == "Centro de Cobranza & WhatsApp":
         if not pendientes.empty:
             for idx, row in pendientes.iterrows():
                 with st.expander(f"📌 {row['Cliente']} | Póliza: {row['Poliza']} ({row['Aseguradora']})"):
-                    st.write(f"**Forma de Pago:** {row['Forma_Pago']} | **Límite:** {row['Pago_Limite']} | **Prima Neta:** ${float(row['Prima_Neta']):,.2f}")
+                    st.write(f"**Forma de Pago:** {row['Forma_Pago']} | **Límite:** {row['Pago_Limite']} | **Prima Neta:** ${float(row['Prima_Neta'] if pd.notnull(row['Prima_Neta']) and str(row['Prima_Neta']).strip()!='' else 0):,.2f}")
                     msg = f"Hola {row['Cliente']}, le saludamos de Seguros Casa Pantera. Le recordamos que su pago ({row['Forma_Pago']}) de la póliza {row['Poliza']} vence el {row['Pago_Limite']}. Quedamos a sus órdenes."
                     link = f"https://wa.me/52{row['Telefono']}?text={urllib.parse.quote(msg)}"
                     st.markdown(f'<a href="{link}" target="_blank"><button style="background-color:#008080; color:white; padding:8px 16px; border-radius:4px; font-weight:bold;">💬 Enviar WhatsApp de Cobranza</button></a>', unsafe_allow_html=True)
