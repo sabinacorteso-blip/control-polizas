@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import urllib.parse
 import io
+import os
 
 # Configuración de la página con tema visual en Verde Agua
 st.set_page_config(page_title="Seguros Casa Pantera - CRM", layout="wide")
@@ -26,7 +27,6 @@ st.markdown("""
         background-color: #005959;
         color: white;
     }
-    /* ESTILOS DE ALTO CONTRASTE PARA LOS CAMPOS DE ENTRADA DE DATOS */
     input, select, textarea, div[data-baseweb="select"] > div, div[data-baseweb="input"] > div {
         background-color: #FFFFFF !important;
         border: 2px solid #20B2AA !important;
@@ -34,12 +34,10 @@ st.markdown("""
         color: #003333 !important;
         font-weight: 500 !important;
     }
-    /* EFECTO AL SELECCIONAR O ESCRIBIR EN UN CAMPO */
     input:focus, select:focus, div[data-baseweb="select"] > div:focus-within {
         border: 2px solid #006666 !important;
         box-shadow: 0 0 5px rgba(32, 178, 170, 0.5) !important;
     }
-    /* ETIQUETAS DE LOS CAMPOS */
     label p {
         color: #004D4D !important;
         font-weight: bold !important;
@@ -48,39 +46,46 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-@st.cache_data(ttl=10)
-def cargar_datos_nube():
-    try:
-        conn = st.connection("gsheets", type="gsheets")
-        df = conn.read(ttl=5)
-        if not df.empty:
-            return df
-    except:
-        pass
-    
-    try:
-        return pd.read_csv("cartera_pantera.csv")
-    except:
-        return pd.DataFrame(columns=[
-            "Cliente", "RFC", "Telefono", "Correo", "Nacimiento", "Contrato", 
-            "Poliza", "Serie", "Placa", "Aseguradora", "Vendedor", "Ramo", 
-            "Uso_Auto", "Prima_Neta", "Forma_Pago", "Vigencia", "Emision", 
-            "Vencimiento", "Pago_Limite", "Estatus_Pago", "Estatus_Poliza", "Mes_Venta"
-        ])
+ARCHIVO_CSV = "cartera_pantera.csv"
+ARCHIVO_HISTORICO = "historico_renovadas.csv"
 
-def guardar_datos_nube(df):
-    df.to_csv("cartera_pantera.csv", index=False)
-    try:
-        conn = st.connection("gsheets", type="gsheets")
-        conn.update(data=df)
-    except:
-        pass
+@st.cache_data(ttl=5)
+def cargar_datos():
+    if os.path.exists(ARCHIVO_CSV):
+        try:
+            return pd.read_csv(ARCHIVO_CSV)
+        except:
+            pass
+    return pd.DataFrame(columns=[
+        "Cliente", "RFC", "Telefono", "Correo", "Nacimiento", "Contrato", 
+        "Poliza", "Serie", "Placa", "Aseguradora", "Vendedor", "Ramo", 
+        "Uso_Auto", "Prima_Neta", "Forma_Pago", "Vigencia", "Emision", 
+        "Vencimiento", "Pago_Limite", "Estatus_Pago", "Estatus_Poliza", "Mes_Venta"
+    ])
+
+def guardar_datos(df):
+    df.to_csv(ARCHIVO_CSV, index=False)
     st.cache_data.clear()
 
+def cargar_historico():
+    if os.path.exists(ARCHIVO_HISTORICO):
+        try:
+            return pd.read_csv(ARCHIVO_HISTORICO)
+        except:
+            pass
+    return pd.DataFrame(columns=cargar_datos().columns)
+
+def guardar_historico(df):
+    df.to_csv(ARCHIVO_HISTORICO, index=False)
+
 if "clientes" not in st.session_state:
-    st.session_state.clientes = cargar_datos_nube()
+    st.session_state.clientes = cargar_datos()
+
+if "historico" not in st.session_state:
+    st.session_state.historico = cargar_historico()
 
 df = st.session_state.clientes
+historico_df = st.session_state.historico
 hoy = datetime.now().date()
 
 df['Vencimiento_dt'] = pd.to_datetime(df.get('Vencimiento'), errors='coerce').dt.date
@@ -94,7 +99,7 @@ with st.sidebar:
     st.markdown("---")
     menu = st.selectbox("Menú CRM", [
         "Dashboard del Mes", 
-        "Búsqueda de Pólizas", 
+        "Búsqueda y Edición", 
         "Registro y Renovación", 
         "Centro de Cobranza & WhatsApp", 
         "Avisos de Cumpleaños", 
@@ -145,37 +150,66 @@ if menu == "Dashboard del Mes":
         st.info("No hay registros bajo este criterio en el periodo actual.")
 
 # -------------------------------------------------------------
-# 2. BÚSQUEDA DE PÓLIZAS
+# 2. BÚSQUEDA Y EDICIÓN DE PÓLIZAS
 # -------------------------------------------------------------
-elif menu == "Búsqueda de Pólizas":
-    st.header("🔍 Búsqueda Inteligente de Pólizas")
-    criterio = st.text_input("Buscar por Nombre del Cliente, Serie del Auto o Placa:")
+elif menu == "Búsqueda y Edición":
+    st.header("🔍 Búsqueda y Edición de Pólizas")
+    criterio = st.text_input("Buscar por Nombre del Cliente, Número de Póliza, Serie o Placa:")
     
     if criterio and not df.empty:
         filtro = df[
             df['Cliente'].str.contains(criterio, case=False, na=False) |
+            df['Poliza'].str.contains(criterio, case=False, na=False) |
             df['Serie'].str.contains(criterio, case=False, na=False) |
             df['Placa'].str.contains(criterio, case=False, na=False)
         ]
         if not filtro.empty:
             st.success(f"Se encontraron {len(filtro)} coincidencia(s):")
-            st.dataframe(filtro[['Poliza', 'Cliente', 'Serie', 'Placa', 'Aseguradora', 'Vencimiento', 'Estatus_Poliza']], use_container_width=True, hide_index=True)
+            st.dataframe(filtro[['Poliza', 'Cliente', 'Aseguradora', 'Vencimiento', 'Estatus_Poliza', 'Estatus_Pago']], use_container_width=True, hide_index=True)
             
-            pol_a_borrar = st.selectbox("Seleccione número de póliza a eliminar si es necesario:", filtro['Poliza'].tolist())
-            if st.button("🗑️ Eliminar Póliza Seleccionada"):
-                df = df[df['Poliza'] != pol_a_borrar].reset_index(drop=True)
-                st.session_state.clientes = df
-                guardar_datos_nube(df)
-                st.success("Póliza eliminada con éxito.")
-                st.rerun()
+            st.markdown("---")
+            st.subheader("✏️ Editar Póliza Seleccionada")
+            pol_a_editar = st.selectbox("Seleccione el número de póliza que desea modificar:", filtro['Poliza'].tolist())
+            
+            if pol_a_editar:
+                row_edit = df[df['Poliza'] == pol_a_editar].iloc[0]
+                with st.form("form_edicion"):
+                    c_ed1, c_ed2 = st.columns(2)
+                    with c_ed1:
+                        nuevo_cliente = st.text_input("Cliente", value=str(row_edit['Cliente']))
+                        nuevo_tel = st.text_input("Teléfono", value=str(row_edit['Telefono']))
+                        nueva_prima = st.number_input("Prima Neta ($)", value=float(row_edit['Prima_Neta']), format="%.2f")
+                        nuevo_estatus_pago = st.selectbox("Estatus de Pago", ["Pendiente", "Pagada"], index=0 if row_edit['Estatus_Pago']=="Pendiente" else 1)
+                    with c_ed2:
+                        nuevo_estatus_poliza = st.selectbox("Estatus de Póliza", ["Activa", "Cancelada (Falta de Pago)"], index=0 if "Activa" in str(row_edit['Estatus_Poliza']) else 1)
+                        nueva_aseg = st.text_input("Aseguradora", value=str(row_edit['Aseguradora']))
+                        nueva_poliza_num = st.text_input("Número de Póliza", value=str(row_edit['Poliza']))
+                        
+                    btn_guardar_cambios = st.form_submit_button("Guardar Cambios de Edición")
+                    
+                    if btn_guardar_cambios:
+                        df.loc[df['Poliza'] == pol_a_editar, 'Cliente'] = nuevo_cliente.upper()
+                        df.loc[df['Poliza'] == pol_a_editar, 'Telefono'] = nuevo_tel
+                        df.loc[df['Poliza'] == pol_a_editar, 'Prima_Neta'] = nueva_prima
+                        df.loc[df['Poliza'] == pol_a_editar, 'Estatus_Pago'] = nuevo_estatus_pago
+                        df.loc[df['Poliza'] == pol_a_editar, 'Estatus_Poliza'] = nuevo_estatus_poliza
+                        df.loc[df['Poliza'] == pol_a_editar, 'Aseguradora'] = nueva_aseg.upper()
+                        
+                        st.session_state.clientes = df
+                        guardar_datos(df)
+                        st.success("¡Póliza actualizada correctamente!")
+                        st.rerun()
         else:
             st.warning("No se encontraron registros con ese criterio.")
+    else:
+        st.info("Escribe el nombre, póliza, serie o placa para buscar y editar.")
 
 # -------------------------------------------------------------
-# 3. REGISTRO Y RENOVACIÓN
+# 3. REGISTRO Y RENOVACIÓN (CON HISTÓRICO ESTADÍSTICO)
 # -------------------------------------------------------------
 elif menu == "Registro y Renovación":
     st.header("📝 Alta y Renovación de Póliza")
+    st.markdown("Si ingresas un número de póliza existente, el sistema archivará la anterior como **RENOVADA** para estadística y dará de alta la nueva.")
     
     with st.form("form_reg"):
         col1, col2 = st.columns(2)
@@ -242,12 +276,23 @@ elif menu == "Registro y Renovación":
             pago_limite = st.date_input("Fecha Límite de Pago")
             
             estatus_pago = st.selectbox("Estatus de Pago", ["Pendiente", "Pagada"])
-            estatus_poliza = st.selectbox("Estatus de Póliza", ["Activa", "Cancelada"])
+            estatus_poliza = st.selectbox("Estatus de Póliza", ["Activa", "Cancelada (Falta de Pago)"])
             mes_venta = st.selectbox("Mes de Contabilidad", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"], index=9)
 
-        submitted = st.form_submit_button("Guardar Registro en Cartera")
+        submitted = st.form_submit_button("Guardar / Renovar Póliza")
 
         if submitted and nombre:
+            # Control de Renovación: si la póliza ya existe, la archivamos con la leyenda RENOVADA
+            if not df.empty and poliza in df['Poliza'].values:
+                poliza_anterior = df[df['Poliza'] == poliza].copy()
+                poliza_anterior['Estatus_Poliza'] = "RENOVADA (HISTÓRICO)"
+                historico_df = pd.concat([historico_df, poliza_anterior], ignore_index=True)
+                st.session_state.historico = historico_df
+                guardar_historico(historico_df)
+                
+                # Eliminamos la anterior de activas para que entre la nueva
+                df = df[df['Poliza'] != poliza].reset_index(drop=True)
+
             nuevo = {
                 "Cliente": nombre, "RFC": rfc, "Telefono": telefono, "Correo": correo,
                 "Nacimiento": str(nacimiento), "Contrato": contrato, "Poliza": poliza,
@@ -259,8 +304,8 @@ elif menu == "Registro y Renovación":
             }
             df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
             st.session_state.clientes = df
-            guardar_datos_nube(df)
-            st.success("¡Nuevo registro guardado con éxito! Se acumuló en la base de datos.")
+            guardar_datos(df)
+            st.success("¡Registro guardado con éxito! Póliza activa actualizada y respaldada.")
 
 # -------------------------------------------------------------
 # 4. CENTRO DE COBRANZA & WHATSAPP
@@ -268,7 +313,7 @@ elif menu == "Registro y Renovación":
 elif menu == "Centro de Cobranza & WhatsApp":
     st.header("💬 Envío de Mensajes por WhatsApp")
     if not df.empty and 'Estatus_Pago' in df.columns:
-        pendientes = df[df['Estatus_Pago'] == 'Pendiente']
+        pendientes = df[(df['Estatus_Pago'] == 'Pendiente') & (df['Estatus_Poliza'] != 'Cancelada (Falta de Pago)')]
         if not pendientes.empty:
             for idx, row in pendientes.iterrows():
                 with st.expander(f"📌 {row['Cliente']} | Póliza: {row['Poliza']} ({row['Aseguradora']})"):
@@ -277,7 +322,7 @@ elif menu == "Centro de Cobranza & WhatsApp":
                     link = f"https://wa.me/52{row['Telefono']}?text={urllib.parse.quote(msg)}"
                     st.markdown(f'<a href="{link}" target="_blank"><button style="background-color:#008080; color:white; padding:8px 16px; border-radius:4px; font-weight:bold;">💬 Enviar WhatsApp de Cobranza</button></a>', unsafe_allow_html=True)
         else:
-            st.success("No hay cobros pendientes.")
+            st.success("No hay cobros pendientes en pólizas activas.")
     else:
         st.info("No hay registros cargados aún.")
 
@@ -302,37 +347,41 @@ elif menu == "Avisos de Cumpleaños":
             st.info("No hay cumpleaños registrados este mes.")
 
 # -------------------------------------------------------------
-# 6. REPORTE CONTABLE EN EXCEL
+# 6. REPORTE CONTABLE EN EXCEL (CON DESPLIEGUE POR MES Y TOTAL)
 # -------------------------------------------------------------
 elif menu == "Reporte Contable (Excel)":
-    st.header("📈 Generación de Excel de Contabilidad Mensual")
+    st.header("📈 Generación de Excel de Contabilidad")
     
-    modo_ver = st.radio("Visualización", ["Filtrar por Mes Específico", "Ver Todos los Registros Históricos"], horizontal=True)
+    modo_ver = st.radio("Visualización de Cartera", ["Filtrar por Mes Específico", "Ver Todos los Registros Históricos", "Ver Pólizas Archivadas (Renovadas)"], horizontal=True)
     
-    if not df.empty:
-        if modo_ver == "Filtrar por Mes Específico":
-            mes_rep = st.selectbox("Selecciona Mes Contable", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"], index=9)
-            df_rep = df[df['Mes_Venta'] == mes_rep]
-        else:
-            df_rep = df
-            
-        st.dataframe(df_rep[['Poliza', 'Cliente', 'Contrato', 'Aseguradora', 'Vendedor', 'Prima_Neta', 'Forma_Pago', 'Estatus_Pago', 'Mes_Venta']], use_container_width=True)
-        
-        if not df_rep.empty:
-            total_m = pd.to_numeric(df_rep['Prima_Neta'], errors='coerce').sum()
-            st.metric("Prima Neta Total", f"${total_m:,.2f}")
-            
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_rep.to_excel(writer, index=False, sheet_name='Contabilidad')
-            
-            st.download_button(
-                label="📥 Descargar Reporte en Excel",
-                data=output.getvalue(),
-                file_name="Contabilidad_Casa_Pantera.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.warning("No hay registros en esta selección.")
+    if modo_ver == "Ver Pólizas Archivadas (Renovadas)":
+        df_rep = historico_df
+        st.info("Mostrando pólizas anteriores archivadas con fines estadísticos.")
     else:
-        st.info("Aún no hay pólizas registradas en la base de datos.")
+        if not df.empty:
+            if modo_ver == "Filtrar por Mes Específico":
+                mes_rep = st.selectbox("Selecciona Mes Contable", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"], index=9)
+                df_rep = df[df['Mes_Venta'] == mes_rep]
+            else:
+                df_rep = df
+        else:
+            df_rep = pd.DataFrame()
+            
+    if not df_rep.empty:
+        st.dataframe(df_rep[['Poliza', 'Cliente', 'Contrato', 'Aseguradora', 'Vendedor', 'Prima_Neta', 'Forma_Pago', 'Estatus_Pago', 'Estatus_Poliza', 'Mes_Venta']], use_container_width=True)
+        
+        total_m = pd.to_numeric(df_rep['Prima_Neta'], errors='coerce').sum()
+        st.metric("Prima Neta Total", f"${total_m:,.2f}")
+        
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_rep.to_excel(writer, index=False, sheet_name='Contabilidad')
+        
+        st.download_button(
+            label="📥 Descargar Reporte en Excel",
+            data=output.getvalue(),
+            file_name="Contabilidad_Casa_Pantera.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.warning("No hay registros en esta selección.")
