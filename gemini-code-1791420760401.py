@@ -53,9 +53,8 @@ ARCHIVO_HISTORICO = "historico_renovadas.csv"
 def cargar_datos():
     if os.path.exists(ARCHIVO_CSV):
         try:
-            df = pd.read_csv(ARCHIVO_CSV)
-            df = df.fillna("") # Limpia valores vacíos o NaN
-            return df
+            df = pd.read_csv(ARCHIVO_CSV, dtype=str) # Forzamos todo a texto para evitar errores de tipo
+            return df.fillna("")
         except:
             pass
     return pd.DataFrame(columns=[
@@ -72,7 +71,7 @@ def guardar_datos(df):
 def cargar_historico():
     if os.path.exists(ARCHIVO_HISTORICO):
         try:
-            df = pd.read_csv(ARCHIVO_HISTORICO)
+            df = pd.read_csv(ARCHIVO_HISTORICO, dtype=str)
             return df.fillna("")
         except:
             pass
@@ -153,14 +152,13 @@ if menu == "Dashboard del Mes":
         st.info("No hay registros bajo este criterio en el periodo actual.")
 
 # -------------------------------------------------------------
-# 2. BÚSQUEDA Y EDICIÓN DE PÓLIZAS (CORREGIDO Y SEGURO)
+# 2. BÚSQUEDA Y EDICIÓN DE PÓLIZAS
 # -------------------------------------------------------------
 elif menu == "Búsqueda y Edición":
     st.header("🔍 Búsqueda y Edición de Pólizas")
     criterio = st.text_input("Buscar por Nombre del Cliente, Número de Póliza, Serie o Placa:")
     
     if criterio and not df.empty:
-        # Búsqueda segura convirtiendo a string
         filtro = df[
             df['Cliente'].astype(str).str.contains(criterio, case=False, na=False) |
             df['Poliza'].astype(str).str.contains(criterio, case=False, na=False) |
@@ -174,15 +172,12 @@ elif menu == "Búsqueda y Edición":
             st.markdown("---")
             st.subheader("✏️ Editar Póliza Seleccionada")
             
-            # Creamos identificadores limpios para el selector
             lista_opciones = []
             for idx, r in filtro.iterrows():
                 p_val = str(r['Poliza']) if pd.notnull(r['Poliza']) and str(r['Poliza']).strip() != "" else f"SIN_POLIZA_{idx}"
                 lista_opciones.append((p_val, idx))
             
             sel_etiqueta = st.selectbox("Seleccione el registro que desea modificar:", [op[0] for op in lista_opciones])
-            
-            # Encontramos el índice real del renglón seleccionado
             idx_real = [op[1] for op in lista_opciones if op[0] == sel_etiqueta][0]
             row_edit = df.loc[idx_real]
             
@@ -208,17 +203,17 @@ elif menu == "Búsqueda y Edición":
                 btn_guardar_cambios = st.form_submit_button("Guardar Cambios de Edición")
                 
                 if btn_guardar_cambios:
-                    df.loc[idx_real, 'Cliente'] = nuevo_cliente.upper()
-                    df.loc[idx_real, 'Telefono'] = nuevo_tel
-                    df.loc[idx_real, 'Prima_Neta'] = nueva_prima
-                    df.loc[idx_real, 'Estatus_Pago'] = nuevo_estatus_pago
-                    df.loc[idx_real, 'Estatus_Poliza'] = nuevo_estatus_poliza
-                    df.loc[idx_real, 'Aseguradora'] = nueva_aseg.upper()
-                    df.loc[idx_real, 'Poliza'] = nueva_poliza_num
+                    df.loc[idx_real, 'Cliente'] = str(nuevo_cliente).upper()
+                    df.loc[idx_real, 'Telefono'] = str(nuevo_tel)
+                    df.loc[idx_real, 'Prima_Neta'] = str(nueva_prima)
+                    df.loc[idx_real, 'Estatus_Pago'] = str(nuevo_estatus_pago)
+                    df.loc[idx_real, 'Estatus_Poliza'] = str(nuevo_estatus_poliza)
+                    df.loc[idx_real, 'Aseguradora'] = str(nueva_aseg).upper()
+                    df.loc[idx_real, 'Poliza'] = str(nueva_poliza_num)
                     
                     st.session_state.clientes = df
                     guardar_datos(df)
-                    st.success("¡Póliza actualizada correctamente!")
+                    st.success("¡Póliza actualizada y guardada correctamente!")
                     st.rerun()
         else:
             st.warning("No se encontraron registros con ese criterio.")
@@ -303,18 +298,18 @@ elif menu == "Registro y Renovación":
 
         if submitted and nombre:
             nuevo = {
-                "Cliente": nombre, "RFC": rfc, "Telefono": telefono, "Correo": correo,
-                "Nacimiento": str(nacimiento), "Contrato": contrato, "Poliza": poliza,
-                "Serie": serie, "Placa": placa, "Aseguradora": aseguradora, "Vendedor": vendedor,
-                "Ramo": ramo, "Uso_Auto": uso_auto, "Prima_Neta": prima_neta, "Forma_Pago": forma_pago,
-                "Vigencia": vigencia_op, "Emision": str(emision), "Vencimiento": str(vencimiento), 
-                "Pago_Limite": str(pago_limite), "Estatus_Pago": estatus_pago, "Estatus_Poliza": estatus_poliza, 
-                "Mes_Venta": mes_venta
+                "Cliente": str(nombre), "RFC": str(rfc), "Telefono": str(telefono), "Correo": str(correo),
+                "Nacimiento": str(nacimiento), "Contrato": str(contrato), "Poliza": str(poliza),
+                "Serie": str(serie), "Placa": str(placa), "Aseguradora": str(aseguradora), "Vendedor": str(vendedor),
+                "Ramo": str(ramo), "Uso_Auto": str(uso_auto), "Prima_Neta": str(prima_neta), "Forma_Pago": str(forma_pago),
+                "Vigencia": str(vigencia_op), "Emision": str(emision), "Vencimiento": str(vencimiento), 
+                "Pago_Limite": str(pago_limite), "Estatus_Pago": str(estatus_pago), "Estatus_Poliza": str(estatus_poliza), 
+                "Mes_Venta": str(mes_venta)
             }
             df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
             st.session_state.clientes = df
             guardar_datos(df)
-            st.success("¡Registro guardado con éxito! Se añadió limpiamente a la base de datos.")
+            st.success("¡Registro guardado con éxito!")
 
 # -------------------------------------------------------------
 # 4. CENTRO DE COBRANZA & WHATSAPP
