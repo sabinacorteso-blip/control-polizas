@@ -183,7 +183,6 @@ elif menu == "Búsqueda y Edición":
                     with c_ed2:
                         nuevo_estatus_poliza = st.selectbox("Estatus de Póliza", ["Activa", "Cancelada (Falta de Pago)"], index=0 if "Activa" in str(row_edit['Estatus_Poliza']) else 1)
                         nueva_aseg = st.text_input("Aseguradora", value=str(row_edit['Aseguradora']))
-                        nueva_poliza_num = st.text_input("Número de Póliza", value=str(row_edit['Poliza']))
                         
                     btn_guardar_cambios = st.form_submit_button("Guardar Cambios de Edición")
                     
@@ -205,11 +204,10 @@ elif menu == "Búsqueda y Edición":
         st.info("Escribe el nombre, póliza, serie o placa para buscar y editar.")
 
 # -------------------------------------------------------------
-# 3. REGISTRO Y RENOVACIÓN (CON HISTÓRICO ESTADÍSTICO)
+# 3. REGISTRO Y RENOVACIÓN
 # -------------------------------------------------------------
 elif menu == "Registro y Renovación":
     st.header("📝 Alta y Renovación de Póliza")
-    st.markdown("Si ingresas un número de póliza existente, el sistema archivará la anterior como **RENOVADA** para estadística y dará de alta la nueva.")
     
     with st.form("form_reg"):
         col1, col2 = st.columns(2)
@@ -279,18 +277,16 @@ elif menu == "Registro y Renovación":
             estatus_poliza = st.selectbox("Estatus de Póliza", ["Activa", "Cancelada (Falta de Pago)"])
             mes_venta = st.selectbox("Mes de Contabilidad", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"], index=9)
 
-        submitted = st.form_submit_button("Guardar / Renovar Póliza")
+        submitted = st.form_submit_button("Guardar Nuevo Registro en Cartera")
 
         if submitted and nombre:
-            # Control de Renovación: si la póliza ya existe, la archivamos con la leyenda RENOVADA
-            if not df.empty and poliza in df['Poliza'].values:
+            # Lógica exacta para control de renovación o alta limpia
+            if not df.empty and poliza in df['Poliza'].values and poliza.strip() != "":
                 poliza_anterior = df[df['Poliza'] == poliza].copy()
                 poliza_anterior['Estatus_Poliza'] = "RENOVADA (HISTÓRICO)"
                 historico_df = pd.concat([historico_df, poliza_anterior], ignore_index=True)
                 st.session_state.historico = historico_df
                 guardar_historico(historico_df)
-                
-                # Eliminamos la anterior de activas para que entre la nueva
                 df = df[df['Poliza'] != poliza].reset_index(drop=True)
 
             nuevo = {
@@ -305,7 +301,7 @@ elif menu == "Registro y Renovación":
             df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
             st.session_state.clientes = df
             guardar_datos(df)
-            st.success("¡Registro guardado con éxito! Póliza activa actualizada y respaldada.")
+            st.success("¡Registro guardado con éxito! Se añadió correctamente a la base de datos sin sobrescribir.")
 
 # -------------------------------------------------------------
 # 4. CENTRO DE COBRANZA & WHATSAPP
@@ -347,7 +343,7 @@ elif menu == "Avisos de Cumpleaños":
             st.info("No hay cumpleaños registrados este mes.")
 
 # -------------------------------------------------------------
-# 6. REPORTE CONTABLE EN EXCEL (CON DESPLIEGUE POR MES Y TOTAL)
+# 6. REPORTE CONTABLE EN EXCEL
 # -------------------------------------------------------------
 elif menu == "Reporte Contable (Excel)":
     st.header("📈 Generación de Excel de Contabilidad")
