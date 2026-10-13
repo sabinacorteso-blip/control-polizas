@@ -49,20 +49,26 @@ st.markdown("""
 ARCHIVO_CSV = "cartera_pantera.csv"
 ARCHIVO_HISTORICO = "historico_renovadas.csv"
 
+COLUMNAS_ESTANDAR = [
+    "Cliente", "RFC", "Telefono", "Correo", "Nacimiento", "Contrato", 
+    "Poliza", "Serie", "Placa", "Marca", "Modelo", "Aseguradora", "Vendedor", "Ramo", 
+    "Uso_Auto", "Prima_Neta", "Forma_Pago", "Vigencia", "Emision", 
+    "Vencimiento", "Pago_Limite", "Estatus_Pago", "Estatus_Poliza", "Mes_Venta"
+]
+
 @st.cache_data(ttl=5)
 def cargar_datos():
     if os.path.exists(ARCHIVO_CSV):
         try:
             df = pd.read_csv(ARCHIVO_CSV, dtype=str)
+            # Asegurar que todas las columnas existan aunque el CSV sea antiguo
+            for col in COLUMNAS_ESTANDAR:
+                if col not in df.columns:
+                    df[col] = ""
             return df.fillna("")
         except:
             pass
-    return pd.DataFrame(columns=[
-        "Cliente", "RFC", "Telefono", "Correo", "Nacimiento", "Contrato", 
-        "Poliza", "Serie", "Placa", "Marca", "Modelo", "Aseguradora", "Vendedor", "Ramo", 
-        "Uso_Auto", "Prima_Neta", "Forma_Pago", "Vigencia", "Emision", 
-        "Vencimiento", "Pago_Limite", "Estatus_Pago", "Estatus_Poliza", "Mes_Venta"
-    ])
+    return pd.DataFrame(columns=COLUMNAS_ESTANDAR)
 
 def guardar_datos(df):
     df.to_csv(ARCHIVO_CSV, index=False)
@@ -72,10 +78,13 @@ def cargar_historico():
     if os.path.exists(ARCHIVO_HISTORICO):
         try:
             df = pd.read_csv(ARCHIVO_HISTORICO, dtype=str)
+            for col in COLUMNAS_ESTANDAR:
+                if col not in df.columns:
+                    df[col] = ""
             return df.fillna("")
         except:
             pass
-    return pd.DataFrame(columns=cargar_datos().columns)
+    return pd.DataFrame(columns=COLUMNAS_ESTANDAR)
 
 def guardar_historico(df):
     df.to_csv(ARCHIVO_HISTORICO, index=False)
