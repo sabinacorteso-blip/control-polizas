@@ -53,13 +53,13 @@ ARCHIVO_HISTORICO = "historico_renovadas.csv"
 def cargar_datos():
     if os.path.exists(ARCHIVO_CSV):
         try:
-            df = pd.read_csv(ARCHIVO_CSV, dtype=str) # Forzamos todo a texto para evitar errores de tipo
+            df = pd.read_csv(ARCHIVO_CSV, dtype=str)
             return df.fillna("")
         except:
             pass
     return pd.DataFrame(columns=[
         "Cliente", "RFC", "Telefono", "Correo", "Nacimiento", "Contrato", 
-        "Poliza", "Serie", "Placa", "Aseguradora", "Vendedor", "Ramo", 
+        "Poliza", "Serie", "Placa", "Marca", "Modelo", "Aseguradora", "Vendedor", "Ramo", 
         "Uso_Auto", "Prima_Neta", "Forma_Pago", "Vigencia", "Emision", 
         "Vencimiento", "Pago_Limite", "Estatus_Pago", "Estatus_Poliza", "Mes_Venta"
     ])
@@ -156,18 +156,20 @@ if menu == "Dashboard del Mes":
 # -------------------------------------------------------------
 elif menu == "Búsqueda y Edición":
     st.header("🔍 Búsqueda y Edición de Pólizas")
-    criterio = st.text_input("Buscar por Nombre del Cliente, Número de Póliza, Serie o Placa:")
+    criterio = st.text_input("Buscar por Nombre del Cliente, Número de Póliza, Serie, Placa, Marca o Modelo:")
     
     if criterio and not df.empty:
         filtro = df[
             df['Cliente'].astype(str).str.contains(criterio, case=False, na=False) |
             df['Poliza'].astype(str).str.contains(criterio, case=False, na=False) |
             df['Serie'].astype(str).str.contains(criterio, case=False, na=False) |
-            df['Placa'].astype(str).str.contains(criterio, case=False, na=False)
+            df['Placa'].astype(str).str.contains(criterio, case=False, na=False) |
+            df['Marca'].astype(str).str.contains(criterio, case=False, na=False) |
+            df['Modelo'].astype(str).str.contains(criterio, case=False, na=False)
         ]
         if not filtro.empty:
             st.success(f"Se encontraron {len(filtro)} coincidencia(s):")
-            st.dataframe(filtro[['Poliza', 'Cliente', 'Aseguradora', 'Vencimiento', 'Estatus_Poliza', 'Estatus_Pago']], use_container_width=True, hide_index=True)
+            st.dataframe(filtro[['Poliza', 'Cliente', 'Marca', 'Modelo', 'Placa', 'Aseguradora', 'Vencimiento', 'Estatus_Poliza']], use_container_width=True, hide_index=True)
             
             st.markdown("---")
             st.subheader("✏️ Editar Póliza Seleccionada")
@@ -186,13 +188,15 @@ elif menu == "Búsqueda y Edición":
                 with c_ed1:
                     nuevo_cliente = st.text_input("Cliente", value=str(row_edit['Cliente']))
                     nuevo_tel = st.text_input("Teléfono", value=str(row_edit['Telefono']))
+                    nueva_marca = st.text_input("Marca del Auto", value=str(row_edit.get('Marca', '')))
+                    nuevo_modelo = st.text_input("Modelo del Auto", value=str(row_edit.get('Modelo', '')))
                     val_prima = float(row_edit['Prima_Neta']) if pd.notnull(row_edit['Prima_Neta']) and str(row_edit['Prima_Neta']).strip()!="" else 0.0
                     nueva_prima = st.number_input("Prima Neta ($)", value=val_prima, format="%.2f")
-                    
+                with c_ed2:
                     est_pago_actual = str(row_edit['Estatus_Pago'])
                     idx_pago = 1 if est_pago_actual == "Pagada" else 0
                     nuevo_estatus_pago = st.selectbox("Estatus de Pago", ["Pendiente", "Pagada"], index=idx_pago)
-                with c_ed2:
+                    
                     est_pol_actual = str(row_edit['Estatus_Poliza'])
                     idx_pol = 1 if "Cancelada" in est_pol_actual else 0
                     nuevo_estatus_poliza = st.selectbox("Estatus de Póliza", ["Activa", "Cancelada (Falta de Pago)"], index=idx_pol)
@@ -205,6 +209,8 @@ elif menu == "Búsqueda y Edición":
                 if btn_guardar_cambios:
                     df.loc[idx_real, 'Cliente'] = str(nuevo_cliente).upper()
                     df.loc[idx_real, 'Telefono'] = str(nuevo_tel)
+                    df.loc[idx_real, 'Marca'] = str(nueva_marca).upper()
+                    df.loc[idx_real, 'Modelo'] = str(nuevo_modelo).upper()
                     df.loc[idx_real, 'Prima_Neta'] = str(nueva_prima)
                     df.loc[idx_real, 'Estatus_Pago'] = str(nuevo_estatus_pago)
                     df.loc[idx_real, 'Estatus_Poliza'] = str(nuevo_estatus_poliza)
@@ -218,7 +224,7 @@ elif menu == "Búsqueda y Edición":
         else:
             st.warning("No se encontraron registros con ese criterio.")
     else:
-        st.info("Escribe el nombre, póliza, serie o placa para buscar y editar.")
+        st.info("Escribe el nombre, póliza, serie, placa, marca o modelo para buscar y editar.")
 
 # -------------------------------------------------------------
 # 3. REGISTRO Y RENOVACIÓN
@@ -261,6 +267,8 @@ elif menu == "Registro y Renovación":
             poliza = st.text_input("Número de Póliza / Folio")
             serie = st.text_input("Número de Serie del Auto")
             placa = st.text_input("Placa del Vehículo")
+            marca = st.text_input("Marca del Auto (Ej. Nissan, Chevrolet)").upper()
+            modelo = st.text_input("Modelo / Año del Auto (Ej. Versa 2024)").upper()
 
         with col2:
             aseguradora_op = ["ANA", "AFIRME", "QUÁLITAS", "GENERAL DE SEGUROS", "BANORTE", "GNP", "OTRO"]
@@ -300,7 +308,8 @@ elif menu == "Registro y Renovación":
             nuevo = {
                 "Cliente": str(nombre), "RFC": str(rfc), "Telefono": str(telefono), "Correo": str(correo),
                 "Nacimiento": str(nacimiento), "Contrato": str(contrato), "Poliza": str(poliza),
-                "Serie": str(serie), "Placa": str(placa), "Aseguradora": str(aseguradora), "Vendedor": str(vendedor),
+                "Serie": str(serie), "Placa": str(placa), "Marca": str(marca), "Modelo": str(modelo),
+                "Aseguradora": str(aseguradora), "Vendedor": str(vendedor),
                 "Ramo": str(ramo), "Uso_Auto": str(uso_auto), "Prima_Neta": str(prima_neta), "Forma_Pago": str(forma_pago),
                 "Vigencia": str(vigencia_op), "Emision": str(emision), "Vencimiento": str(vencimiento), 
                 "Pago_Limite": str(pago_limite), "Estatus_Pago": str(estatus_pago), "Estatus_Poliza": str(estatus_poliza), 
@@ -309,7 +318,7 @@ elif menu == "Registro y Renovación":
             df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
             st.session_state.clientes = df
             guardar_datos(df)
-            st.success("¡Registro guardado con éxito!")
+            st.success("¡Registro guardado con éxito con marca y modelo!")
 
 # -------------------------------------------------------------
 # 4. CENTRO DE COBRANZA & WHATSAPP
@@ -321,7 +330,7 @@ elif menu == "Centro de Cobranza & WhatsApp":
         if not pendientes.empty:
             for idx, row in pendientes.iterrows():
                 with st.expander(f"📌 {row['Cliente']} | Póliza: {row['Poliza']} ({row['Aseguradora']})"):
-                    st.write(f"**Forma de Pago:** {row['Forma_Pago']} | **Límite:** {row['Pago_Limite']} | **Prima Neta:** ${float(row['Prima_Neta'] if pd.notnull(row['Prima_Neta']) and str(row['Prima_Neta']).strip()!='' else 0):,.2f}")
+                    st.write(f"**Auto:** {row.get('Marca', '')} {row.get('Modelo', '')} | **Forma de Pago:** {row['Forma_Pago']} | **Límite:** {row['Pago_Limite']} | **Prima Neta:** ${float(row['Prima_Neta'] if pd.notnull(row['Prima_Neta']) and str(row['Prima_Neta']).strip()!='' else 0):,.2f}")
                     msg = f"Hola {row['Cliente']}, le saludamos de Seguros Casa Pantera. Le recordamos que su pago ({row['Forma_Pago']}) de la póliza {row['Poliza']} vence el {row['Pago_Limite']}. Quedamos a sus órdenes."
                     link = f"https://wa.me/52{row['Telefono']}?text={urllib.parse.quote(msg)}"
                     st.markdown(f'<a href="{link}" target="_blank"><button style="background-color:#008080; color:white; padding:8px 16px; border-radius:4px; font-weight:bold;">💬 Enviar WhatsApp de Cobranza</button></a>', unsafe_allow_html=True)
@@ -372,7 +381,8 @@ elif menu == "Reporte Contable (Excel)":
             df_rep = pd.DataFrame()
             
     if not df_rep.empty:
-        st.dataframe(df_rep[['Poliza', 'Cliente', 'Contrato', 'Aseguradora', 'Vendedor', 'Prima_Neta', 'Forma_Pago', 'Estatus_Pago', 'Estatus_Poliza', 'Mes_Venta']], use_container_width=True)
+        columnas_mostrar = [c for c in ['Poliza', 'Cliente', 'Contrato', 'Marca', 'Modelo', 'Aseguradora', 'Vendedor', 'Prima_Neta', 'Forma_Pago', 'Estatus_Pago', 'Estatus_Poliza', 'Mes_Venta'] if c in df_rep.columns]
+        st.dataframe(df_rep[columnas_mostrar], use_container_width=True)
         
         total_m = pd.to_numeric(df_rep['Prima_Neta'], errors='coerce').sum()
         st.metric("Prima Neta Total", f"${total_m:,.2f}")
